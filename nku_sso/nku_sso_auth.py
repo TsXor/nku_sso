@@ -32,11 +32,13 @@ class NKUSSOAuth(RequestsAuthBase):
         req.url = parsed_req_url._replace(query=f'ticket={ticket}').geturl()
         with requests.Session() as tmp_sess:
             # 在临时会话内不带钩子地发送加了ticket的请求
+            req_orig_hooks = req.hooks; req.hooks = {}
             real_resp = tmp_sess.send(req, allow_redirects=False, **kwargs)
+            req.hooks = req_orig_hooks
         return real_resp
 
     def __call__(self, req: requests.PreparedRequest):
         assert req.url is not None
-        resp_hook = functools.partial(self.login_if_needed, req.copy())
+        resp_hook = functools.partial(self.login_if_needed, req)
         req.register_hook("response", resp_hook)
         return req

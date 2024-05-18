@@ -13,8 +13,7 @@
   ```python
   resp = requests.get('http://tycgs.nankai.edu.cn/User/LoginCas', auth=NKUSSOAuth(sso))
   ```
-  注：这个扩展认证只有在访问的网址会跳转到SSO登录页时才会生效。  
-  再注：也建议只在访问的网址会跳转到SSO登录页时使用此扩展认证，因为它会预复制当次请求用于重放。  
+  注：这个扩展认证只有在访问的网址会跳转到SSO登录页时才会生效。    
 
 ## 使用例
 ```python
