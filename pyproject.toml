@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nku-sso"
+version = "0.0.1"
+authors = [
+    { name="TsXor", email="zhang050525@outlook.com" },
+]
+description = "今天来点学校运维不太想看的东西。"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "requests",
+    "pycryptodome",
+]
+
+[project.urls]
+Homepage = "https://github.com/TsXor/nku_sso"
+Issues = "https://github.com/TsXor/nku_sso/issues"

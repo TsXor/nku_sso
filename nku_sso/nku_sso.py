@@ -3,6 +3,7 @@ import math, datetime, re, random, hashlib, base64, warnings
 from Crypto.Cipher import PKCS1_v1_5 as CryptoPKCS1
 from Crypto.PublicKey import RSA as CryptoRSA
 from urllib.parse import urlparse, parse_qs
+from http.cookiejar import CookieJar as HTTPCookieJar
 import requests
 from .utils import *
 from .errors import *
@@ -55,8 +56,6 @@ class NKUSSO:
         randnum = math.floor(random.random() * 1000)
         auth_str = str(timestamp) + str(randnum)
         return { "Authorization": auth_str, }
-
-
 
     @staticmethod
     def url(path: str): return NKUSSO.ADDRESS + path
@@ -173,3 +172,9 @@ class NKUSSO:
             return self.redirected_login(srv_url, resp_try)
         else:
             raise ServerBrokePromiseError(f'未知请求状态({resp_try.status_code})')
+
+    def load_cookies(self, cookies: HTTPCookieJar):
+        self.sess.cookies.update(cookies)
+
+    def dump_cookies(self):
+        return self.sess.cookies.copy()

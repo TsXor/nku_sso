@@ -14,6 +14,7 @@
   resp = requests.get('http://tycgs.nankai.edu.cn/User/LoginCas', auth=NKUSSOAuth(sso))
   ```
   注：这个扩展认证只有在访问的网址会跳转到SSO登录页时才会生效。  
+  再注：也建议只在访问的网址会跳转到SSO登录页时使用此扩展认证，因为它会预复制当次请求用于重放。  
 
 ## 使用例
 ```python
@@ -33,6 +34,14 @@ with requests.Session() as sess:
     resp = sess.get('http://tycgs.nankai.edu.cn/User/LoginCas', auth=NKUSSOAuth(sso))
     print(sess.cookies)
 ```
+
+## 构建与安装
+构建：
+```bash
+py -m pip install build
+py -m build
+```
+安装：使用`pip`安装`dist`目录下生成的`.whl`文件。
 
 ## 这是什么玩意我看不懂
 你无敌了孩子，找能看懂的给你讲。
