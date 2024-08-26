@@ -1,12 +1,21 @@
-from typing import Optional, Any, cast
-import math, datetime, re, random, hashlib, base64, warnings
+import base64
+import datetime
+import hashlib
+import math
+import random
+import re
+import warnings
+from typing import Any
+from urllib.parse import parse_qs, urlparse
+
+import requests
 from Crypto.Cipher import PKCS1_v1_5 as CryptoPKCS1
 from Crypto.PublicKey import RSA as CryptoRSA
-from urllib.parse import urlparse, parse_qs
-from http.cookiejar import CookieJar as HTTPCookieJar
-import requests
-from .utils import *
+
+from .auth_wrapper import WebLoginInterceptor
+from .browser_mimic import BrowserMimic
 from .errors import *
+from .utils import *
 
 
 class SSOPassword:
@@ -18,7 +27,7 @@ class SSOPassword:
     PUBKEY_DECODED = CryptoRSA.import_key(base64.b64decode(PUBKEY))
 
     @staticmethod
-    def md5(strn: str):
+    def md5_hex(strn: str):
         return hashlib.md5(strn.encode()).hexdigest()
 
     @staticmethod
@@ -28,12 +37,15 @@ class SSOPassword:
         return base64.b64encode(enc_bin).decode()
 
 
-class NKUSSO:
-    DOMAIN = 'sso.nankai.edu.cn'
-    ADDRESS = 'https://' + DOMAIN
-
-    sess: requests.Session
+class NKUSSO(BrowserMimic):
     user: str; password: str
+
+    @classmethod
+    def domain(cls) -> str: return 'sso.nankai.edu.cn'
+
+    def __init__(self, user: str, password: str):
+        self.user = user; self.password = password
+        super().__init__()
 
     @staticmethod
     def grep_lt(webpage: str):
@@ -57,50 +69,17 @@ class NKUSSO:
         auth_str = str(timestamp) + str(randnum)
         return { "Authorization": auth_str, }
 
-    @staticmethod
-    def url(path: str): return NKUSSO.ADDRESS + path
-
-    def __init__(self, user: str, password: str):
-        self.sess = requests.Session()
-        self.user = user; self.password = password
-        self.sess.headers = {
-            'Host': self.DOMAIN,
-            'Origin': self.ADDRESS,
-            'Accept': 'application/json, text/javascript, */*; q=0.01',
-            'Accept-Language': 'zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Sec-Fetch-Dest': 'empty',
-            'Sec-Fetch-Mode': 'cors',
-            'Sec-Fetch-Site': 'same-origin',
-            'X-Requested-With': 'XMLHttpRequest',
-        }
-
-    @property
-    def user_agent(self) -> Optional[str]:
-        if 'User-Agent' in self.sess.headers:
-            return str(self.sess.headers['User-Agent'])
-        else:
-            return None
-
-    @user_agent.setter
-    def user_agent(self, new_ua: Optional[str]):
-        if new_ua is None:
-            del self.sess.headers['User-Agent']
-        else:
-            self.sess.headers['User-Agent'] = new_ua
-
     def uncached_login(self, srv_url: str, resp_login: requests.Response) -> str:
         var_lt: str = self.grep_lt(resp_login.text)
         
-        resp_load_code = self.sess.post(self.url('/sso/loadcode'), headers=self.load_code_headers())
+        resp_load_code = self.xhr('POST', '/sso/loadcode', headers=self.load_code_headers())
         try: var_rand: str = resp_load_code.json()['rand']
         except Exception as err: raise ServerBrokePromiseError('意外错误') from err
         
-        passwd_md5 = SSOPassword.md5(self.password)
+        passwd_md5 = SSOPassword.md5_hex(self.password)
         passwd_rsa = SSOPassword.rsa(self.password)
         
-        resp_check_role = self.sess.post(self.url('/sso/checkRole'), data={
+        resp_check_role = self.xhr('POST', '/sso/checkRole', data={
             'username': self.user,
             'password': passwd_md5,
             't': passwd_rsa,
@@ -115,7 +94,7 @@ class NKUSSO:
         except LoginProcedureError: raise
         except Exception as err: raise ServerBrokePromiseError('意外错误') from err
         
-        resp_check_weak = self.sess.post(self.url('/sso/checkWeak'), data={
+        resp_check_weak = self.xhr('POST', '/sso/checkWeak', data={
             'username': self.user,
             'password': passwd_md5,
         })
@@ -130,7 +109,7 @@ class NKUSSO:
         except LoginProcedureError: raise
         except Exception as err: raise ServerBrokePromiseError('意外错误') from err
         
-        resp_login = self.sess.post(self.url('/sso/login'), data={
+        resp_login = self.xhr('POST', '/sso/login', data={
             'ajax': '1',
             'username': self.user,
             'password': passwd_md5,
@@ -162,19 +141,36 @@ class NKUSSO:
         except ValueError as exc:
             raise ServerBrokePromiseError(f'重定向({ticket_url})中ticket参数异常') from exc
 
-    def login(self, srv_url: str) -> str:
+    def login(self, req_url: str, srv_url: str) -> str:
         if self.user_agent is None:
             warnings.warn('未设置User-Agent', category=YouMayBeNoticedWarning)
-        resp_try = self.sess.get(self.url('/sso/login'), params={'service': srv_url}, allow_redirects=False)
+        resp_try = self.document('/sso/login', params={'service': srv_url}, allow_redirects=False)
         if resp_try.status_code == 200:
-            return self.uncached_login(srv_url, resp_try)
+            ticket = self.uncached_login(srv_url, resp_try)
         elif resp_try.is_redirect:
-            return self.redirected_login(srv_url, resp_try)
+            ticket = self.redirected_login(srv_url, resp_try)
         else:
             raise ServerBrokePromiseError(f'未知请求状态({resp_try.status_code})')
+        return urlparse(srv_url)._replace(query=f'ticket={ticket}').geturl()
 
-    def load_cookies(self, cookies: HTTPCookieJar):
-        self.sess.cookies.update(cookies)
+    def should_handle(self, resp: requests.Response):
+        # 检查是否进入SSO
+        if not resp.is_redirect: return None
+        new_loc = resp.headers['Location']
+        parsed_new_loc = urlparse(new_loc)
+        if not parsed_new_loc.netloc == self.domain(): return None
+        if not parsed_new_loc.path == '/sso/login': return None
+        # 检验链接完整性
+        queries_new_loc = parse_qs(parsed_new_loc.query)
+        try: srv_url = get_from_queries(queries_new_loc, 'service')
+        except ValueError as exc:
+            raise ServerBrokePromiseError(f'重定向({new_loc})中service参数异常') from exc
+        req = resp.request; assert req.url is not None
+        if not url_is_similar(urlparse(req.url), urlparse(srv_url)):
+            raise ServerBrokePromiseError(f'重定向({new_loc})指向的不是原请求网址({req.url})')
+        return srv_url
 
-    def dump_cookies(self):
-        return self.sess.cookies.copy()
+
+class NKUSSOAuth(WebLoginInterceptor):
+    def __init__(self, user: str, password: str):
+        super().__init__(NKUSSO(user, password))

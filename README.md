@@ -8,7 +8,7 @@
   - `def login(srv_url: str) -> str: ...`  
     输入服务URL，返回ticket
 - `NKUSSOAuth`：可在`requests`中使用的扩展认证。  
-  构造：`NKUSSOAuth(sso: NKUSSO)`  
+  构造：`NKUSSOAuth(user: str, password: str)`  
   使用例：
   ```python
   resp = requests.get('http://tycgs.nankai.edu.cn/User/LoginCas', auth=NKUSSOAuth(sso))
