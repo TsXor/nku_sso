@@ -158,8 +158,8 @@ class NKUSSO(BrowserMimic):
         if not resp.is_redirect: return None
         new_loc = resp.headers['Location']
         parsed_new_loc = urlparse(new_loc)
-        if not parsed_new_loc.netloc == self.domain(): return None
-        if not parsed_new_loc.path == '/sso/login': return None
+        if parsed_new_loc.netloc != self.domain(): return None
+        if parsed_new_loc.path != '/sso/login': return None
         # 检验链接完整性
         queries_new_loc = parse_qs(parsed_new_loc.query)
         try: srv_url = get_from_queries(queries_new_loc, 'service')
